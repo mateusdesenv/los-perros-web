@@ -115,4 +115,3 @@ vercel.json
 - Imagem salva em `src/assets/hero-banner.webp` e importada no `Hero` via Vite.
 - Versão mobile mantém navegação inferior com Home, Carrinho e Cardápio.
 - Header superior fica oculto no mobile.
-# los-perros-web

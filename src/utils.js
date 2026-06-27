@@ -42,6 +42,10 @@ export function normalizeText(value = '') {
     .trim();
 }
 
+export function getProductImageSrc(image) {
+  return image || null;
+}
+
 export function getAllProducts(menuData) {
   return menuData.categories.flatMap((category) =>
     category.products.map((product) => ({

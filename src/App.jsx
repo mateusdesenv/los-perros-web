@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import initialMenuData from './data/menuData.json';
+import { menuApi } from './services/api';
 import logoBadge from './assets/logo-badge.jpg';
 import logoMain from './assets/logo-main.jpg';
 import mascots from './assets/mascots.jpg';
@@ -35,7 +36,7 @@ import {
   categoryIcons,
   formatCurrency,
   getAllProducts,
-  getFeaturedProducts,
+  getProductImageSrc,
   normalizeText,
   sanitizeWhatsAppNumber,
 } from './utils';
@@ -71,14 +72,27 @@ function CategoryIcon({ categoryId }) {
 }
 
 function ProductVisual({ product }) {
+  const [imageError, setImageError] = useState(false);
+  const imageSrc = !imageError ? getProductImageSrc(product.image) : null;
+
+  useEffect(() => {
+    setImageError(false);
+  }, [product.image]);
+
   return (
     <div
-      className="product-visual"
+      className={`product-visual ${imageSrc ? 'has-product-image' : ''}`}
       style={{ background: categoryGradient[product.categoryId] || undefined }}
       aria-hidden="true"
     >
-      <div className="product-glow" />
-      <span>{categoryIcons[product.categoryId] || '🛒'}</span>
+      {imageSrc ? (
+        <img src={imageSrc} alt="" onError={() => setImageError(true)} />
+      ) : (
+        <>
+          <div className="product-glow" />
+          <span>{categoryIcons[product.categoryId] || '🛒'}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -265,7 +279,7 @@ function Hero({ productCount, onOpenCatalog }) {
   );
 }
 
-function HomePage({ allProducts, featuredProducts, onAdd, onOpenCatalog, onOpenCart }) {
+function HomePage({ allProducts, featuredProducts, isLoading, error, onRetry, onAdd, onOpenCatalog, onOpenCart }) {
   return (
     <>
       <Hero productCount={allProducts.length} onOpenCatalog={onOpenCatalog} />
@@ -280,11 +294,18 @@ function HomePage({ allProducts, featuredProducts, onAdd, onOpenCatalog, onOpenC
             Cardápio completo <ChevronRight size={18} />
           </button>
         </div>
-        <div className="featured-grid">
-          {featuredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} onAdd={onAdd} />
-          ))}
-        </div>
+        {isLoading ? <StatusPanel title="Carregando destaques" message="Buscando os produtos em destaque na API." /> : null}
+        {error ? <StatusPanel title="Não foi possível carregar" message={error} actionLabel="Tentar novamente" onAction={onRetry} /> : null}
+        {!isLoading && !error && featuredProducts.length ? (
+          <div className="featured-grid">
+            {featuredProducts.map((product) => (
+              <ProductCard key={product.id} product={product} onAdd={onAdd} />
+            ))}
+          </div>
+        ) : null}
+        {!isLoading && !error && !featuredProducts.length ? (
+          <StatusPanel title="Sem destaques ativos" message="Marque produtos como destaque no admin para exibi-los aqui." />
+        ) : null}
       </section>
 
       <section className="benefits-panel" id="pedido">
@@ -325,7 +346,22 @@ function HomePage({ allProducts, featuredProducts, onAdd, onOpenCatalog, onOpenC
   );
 }
 
-function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory, searchTerm, onSelectCategory, onSearch, onReset, onAdd, onBackHome }) {
+function StatusPanel({ title, message, actionLabel, onAction }) {
+  return (
+    <div className="empty-state api-state">
+      <Search size={34} />
+      <h3>{title}</h3>
+      <p>{message}</p>
+      {actionLabel ? (
+        <button className="secondary-button" type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory, searchTerm, isLoading, error, onRetry, onSelectCategory, onSearch, onReset, onAdd, onBackHome }) {
   const selectedCategoryName = selectedCategory === 'todos'
     ? 'Todos os produtos'
     : menuData.categories.find((item) => item.id === selectedCategory)?.name;
@@ -340,7 +376,7 @@ function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory
         <div>
           <span className="section-kicker">Cardápio completo</span>
           <h2>{selectedCategoryName}</h2>
-          <p>{filteredProducts.length} de {allProducts.length} produtos. Dados carregados do JSON e persistidos no navegador.</p>
+          <p>{filteredProducts.length} de {allProducts.length} produtos. Dados carregados da API Los Perros.</p>
         </div>
         <div className="catalog-actions">
           <label className="search-box">
@@ -352,12 +388,17 @@ function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory
             />
           </label>
           <button className="reset-button" type="button" onClick={onReset}>
-            <RotateCcw size={17} /> Restaurar JSON
+            <RotateCcw size={17} /> Recarregar API
           </button>
         </div>
       </div>
 
-      <div className="category-strip catalog-category-strip" aria-label="Categorias do cardápio completo">
+      {isLoading ? <StatusPanel title="Carregando cardápio" message="Buscando categorias e produtos na API." /> : null}
+      {error ? <StatusPanel title="Não foi possível carregar" message={error} actionLabel="Tentar novamente" onAction={onRetry} /> : null}
+
+      {!isLoading && !error ? (
+      <>
+        <div className="category-strip catalog-category-strip" aria-label="Categorias do cardápio completo">
         <button
           className={`category-card ${selectedCategory === 'todos' ? 'is-selected' : ''}`}
           type="button"
@@ -379,9 +420,9 @@ function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory
             <small>{category.products.length} itens</small>
           </button>
         ))}
-      </div>
+        </div>
 
-      <div className="filter-row">
+        <div className="filter-row">
         <button
           className={selectedCategory === 'todos' ? 'is-selected' : ''}
           type="button"
@@ -399,21 +440,23 @@ function CatalogPage({ menuData, allProducts, filteredProducts, selectedCategory
             {category.name} <span>{category.products.length}</span>
           </button>
         ))}
-      </div>
+        </div>
 
-      <div className="products-grid">
+        <div className="products-grid">
         {filteredProducts.map((product) => (
           <ProductCard key={product.id} product={product} onAdd={onAdd} />
         ))}
-      </div>
+        </div>
 
-      {!filteredProducts.length && (
+        {!filteredProducts.length && (
         <div className="empty-state">
           <Search size={34} />
           <h3>Nenhum produto encontrado</h3>
           <p>Tente outro termo de busca ou selecione outra categoria.</p>
         </div>
-      )}
+        )}
+      </>
+      ) : null}
     </section>
   );
 }
@@ -440,7 +483,12 @@ function BottomNavigation({ currentPage, cartQuantity, onHome, onCart, onCatalog
 
 
 function App() {
-  const [menuData, setMenuData] = useLocalStorageState(STORAGE_KEYS.menu, initialMenuData);
+  const [menuData, setMenuData] = useState(initialMenuData);
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [isMenuLoading, setIsMenuLoading] = useState(true);
+  const [isFeaturedLoading, setIsFeaturedLoading] = useState(true);
+  const [menuError, setMenuError] = useState('');
+  const [featuredError, setFeaturedError] = useState('');
   const [cart, setCart] = useLocalStorageState(STORAGE_KEYS.cart, []);
   const [selectedCategory, setSelectedCategory] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -449,7 +497,6 @@ function App() {
   const [currentPage, setCurrentPage] = useState(getPageFromLocation);
 
   const allProducts = useMemo(() => getAllProducts(menuData), [menuData]);
-  const featuredProducts = useMemo(() => getFeaturedProducts(menuData, 8), [menuData]);
 
   const filteredProducts = useMemo(() => {
     const search = normalizeText(searchTerm);
@@ -462,6 +509,11 @@ function App() {
   }, [allProducts, searchTerm, selectedCategory]);
 
   useEffect(() => {
+    loadFeaturedProducts();
+    loadMenu();
+  }, []);
+
+  useEffect(() => {
     function syncPageWithLocation() {
       setCurrentPage(getPageFromLocation());
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -470,6 +522,35 @@ function App() {
     window.addEventListener('popstate', syncPageWithLocation);
     return () => window.removeEventListener('popstate', syncPageWithLocation);
   }, []);
+
+  async function loadFeaturedProducts() {
+    setIsFeaturedLoading(true);
+    setFeaturedError('');
+
+    try {
+      const products = await menuApi.getFeaturedProducts();
+      setFeaturedProducts(products);
+    } catch (error) {
+      setFeaturedError(error.message || 'Não foi possível carregar os destaques.');
+      setFeaturedProducts([]);
+    } finally {
+      setIsFeaturedLoading(false);
+    }
+  }
+
+  async function loadMenu() {
+    setIsMenuLoading(true);
+    setMenuError('');
+
+    try {
+      const menu = await menuApi.getMenu();
+      setMenuData(menu);
+    } catch (error) {
+      setMenuError(error.message || 'Não foi possível carregar o cardápio.');
+    } finally {
+      setIsMenuLoading(false);
+    }
+  }
 
   function navigateTo(page, options = {}) {
     const path = ROUTES[page] || ROUTES.home;
@@ -526,7 +607,7 @@ function App() {
   }
 
   function resetMenuData() {
-    setMenuData(initialMenuData);
+    loadMenu();
     setSelectedCategory('todos');
     setSearchTerm('');
   }
@@ -558,6 +639,9 @@ function App() {
           <HomePage
             allProducts={allProducts}
             featuredProducts={featuredProducts}
+            isLoading={isFeaturedLoading}
+            error={featuredError}
+            onRetry={loadFeaturedProducts}
             onAdd={addToCart}
             onOpenCatalog={openFullCatalog}
             onOpenCart={() => setIsCartOpen(true)}
@@ -569,6 +653,9 @@ function App() {
             filteredProducts={filteredProducts}
             selectedCategory={selectedCategory}
             searchTerm={searchTerm}
+            isLoading={isMenuLoading}
+            error={menuError}
+            onRetry={loadMenu}
             onSelectCategory={setSelectedCategory}
             onSearch={setSearchTerm}
             onReset={resetMenuData}
@@ -585,8 +672,8 @@ function App() {
         </div>
         <div>
           <strong>Contato</strong>
-          <span>WhatsApp: configurar no .env</span>
-          <span>@losperros.market</span>
+          <span>WhatsApp: {menuData.establishment.whatsapp || 'configurar na API'}</span>
+          <span>{menuData.establishment.instagram || '@losperros.market'}</span>
         </div>
         <div>
           <strong>Cardápio</strong>
